@@ -8,7 +8,6 @@ import "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 
-// create withdraw nft
 contract LuckyDraw is ERC721, ERC721Holder, VRFConsumerBaseV2, Ownable {
     using Counters for Counters.Counter;
     Counters.Counter private _tokenIdCounter;
