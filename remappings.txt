@@ -1,0 +1,3 @@
+forge-std/=lib/forge-std/src/
+@chainlink/=lib/chainlink/
+@openzeppelin/=lib/openzeppelin-contracts
