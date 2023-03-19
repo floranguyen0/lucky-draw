@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.13;
+pragma solidity 0.8.19;
 
 import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 import "@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol";
@@ -9,26 +9,21 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 
 contract LuckyDraw is ERC721, ERC721Holder, VRFConsumerBaseV2, Ownable {
-    using Counters for Counters.Counter;
-    Counters.Counter private _tokenIdCounter;
-    bool public DRAW_IN_PROGRESS;
+    uint256 private _tokenIdCounter;
+    uint32 private constant CALLBACK_GAS_LIMIT = 100000;
+    uint8 private constant REQUEST_CONFIRMATIONS = 3;
+    uint8 private constant NUM_WORDS = 1;
 
     VRFCoordinatorV2Interface public immutable COORDINATOR;
     bytes32 public immutable KEY_HASH;
-
-    uint32 constant CALLBACK_GAS_LIMIT = 100000;
-    uint8 constant REQUEST_CONFIRMATIONS = 3;
-    uint8 constant NUM_WORDS = 1;
+    bool public DRAW_IN_PROGRESS;
 
     event Mint(address indexed to, uint256 indexed amount);
-
     event LuckyDrawCreated(
         uint256 indexed tokenId,
         uint256 indexed subscriptionId
     );
-
     event ParticipantRegistered(uint256 tokenId, address participant);
-
     event DrawResult(
         uint256 indexed tokenId,
         uint256 requestId,
@@ -39,14 +34,9 @@ contract LuckyDraw is ERC721, ERC721Holder, VRFConsumerBaseV2, Ownable {
 
     modifier isApprovedOrOwner(uint256 tokenId) {
         require(
-            _isApprovedOrOwner(_msgSender(), tokenId),
+            _isApprovedOrOwner(msg.sender, tokenId),
             "Caller is not the token owner nor approved"
         );
-        _;
-    }
-
-    modifier isLuckyDrawActive(uint256 tokenId) {
-        require(isLuckDrawActive[tokenId], "Lucky draw is not active");
         _;
     }
 
@@ -58,10 +48,10 @@ contract LuckyDraw is ERC721, ERC721Holder, VRFConsumerBaseV2, Ownable {
 
     // mapping(uint256 => uint256) public tokenId
 
-    constructor(address vrfCoordinatorAddress, bytes32 keyHash)
-        ERC721("LuckyToken", "LKT")
-        VRFConsumerBaseV2(vrfCoordinatorAddress)
-    {
+    constructor(
+        address vrfCoordinatorAddress,
+        bytes32 keyHash
+    ) ERC721("LuckyToken", "LKT") VRFConsumerBaseV2(vrfCoordinatorAddress) {
         COORDINATOR = VRFCoordinatorV2Interface(vrfCoordinatorAddress);
         KEY_HASH = keyHash;
     }
@@ -69,9 +59,12 @@ contract LuckyDraw is ERC721, ERC721Holder, VRFConsumerBaseV2, Ownable {
     function safeMint(address to, uint256 amount) public onlyOwner {
         require(amount > 0, "Cannot mint 0 NFT");
 
-        for (uint256 i = 0; i < amount; i++) {
-            uint256 tokenId = _tokenIdCounter.current();
-            _tokenIdCounter.increment();
+        for (uint256 i = 0; i < amount; ) {
+            uint256 tokenId = _tokenIdCounter;
+            unchecked {
+                ++_tokenIdCounter;
+                ++i;
+            }
             _safeMint(to, tokenId);
         }
 
@@ -80,18 +73,18 @@ contract LuckyDraw is ERC721, ERC721Holder, VRFConsumerBaseV2, Ownable {
 
     function claimReward(uint256 tokenId) public {
         require(
-            _msgSender() == tokenIdToWinner[tokenId],
+            msg.sender == tokenIdToWinner[tokenId],
             "Only the winner can claim the reward"
         );
 
-        safeTransferFrom(address(this), _msgSender(), tokenId);
+        safeTransferFrom(address(this), msg.sender, tokenId);
         delete tokenIdToWinner[tokenId];
     }
 
-    function createLuckyDraw(uint256 tokenId, uint64 subscriptionId)
-        public
-        isApprovedOrOwner(tokenId)
-    {
+    function createLuckyDraw(
+        uint256 tokenId,
+        uint64 subscriptionId
+    ) public isApprovedOrOwner(tokenId) {
         require(
             tokenIdToSubscriptionId[tokenId] == 0,
             "Lucky draw for this token has already been created"
@@ -103,38 +96,37 @@ contract LuckyDraw is ERC721, ERC721Holder, VRFConsumerBaseV2, Ownable {
         emit LuckyDrawCreated(tokenId, subscriptionId);
     }
 
-    function changeLuckDrawStatus(uint256 tokenId)
-        public
-        isApprovedOrOwner(tokenId)
-    {
+    function changeLuckDrawStatus(
+        uint256 tokenId
+    ) public isApprovedOrOwner(tokenId) {
         isLuckDrawActive[tokenId] = !isLuckDrawActive[tokenId];
     }
 
-    function registerParticipant(uint256 tokenId)
-        public
-        isLuckyDrawActive(tokenId)
-    {
+    function registerParticipant(uint256 tokenId) public {
+        require(isLuckDrawActive[tokenId], "Lucky draw is not active");
+
         address[] memory participants = tokenIdToParticipants[tokenId];
 
-        for (uint256 i = 0; i < participants.length; i++) {
-            require(_msgSender() != participants[i], "You already registered");
+        for (uint256 i = 0; i < participants.length; ) {
+            require(msg.sender != participants[i], "You already registered");
+            unchecked {
+                ++i;
+            }
         }
-        tokenIdToParticipants[tokenId].push(_msgSender());
 
-        emit ParticipantRegistered(tokenId, _msgSender());
+        tokenIdToParticipants[tokenId].push(msg.sender);
+
+        emit ParticipantRegistered(tokenId, msg.sender);
     }
 
     function makeDraw(uint256 tokenId) public returns (uint256) {
         // add draw in progress
-        address[] memory participants = tokenIdToParticipants[tokenId];
+        uint256 length = tokenIdToParticipants[tokenId].length;
 
-        require(DRAW_IN_PROGRESS == false, "Lucky draw in progress");
-        require(
-            participants.length > 1,
-            "Not enough participants to make a draw"
-        );
+        require(!DRAW_IN_PROGRESS, "Lucky draw in progress");
+        require(length > 1, "Not enough participants to make a draw");
 
-        safeTransferFrom(_msgSender(), address(this), tokenId);
+        safeTransferFrom(msg.sender, address(this), tokenId);
         DRAW_IN_PROGRESS = true;
 
         return _requestRandomWord((tokenId));
@@ -158,12 +150,12 @@ contract LuckyDraw is ERC721, ERC721Holder, VRFConsumerBaseV2, Ownable {
         uint256[] memory _randomWords
     ) internal override {
         uint256 tokenId = requestedIdToTokenId[requestId];
-        address[] memory participants = tokenIdToParticipants[tokenId];
+        address[] storage participants = tokenIdToParticipants[tokenId];
 
         // get the winner
-        uint256 participantsLength = participants.length;
+        uint256 length = tokenIdToParticipants[tokenId].length;
 
-        uint256 winnerIndex = (_randomWords[0] % participantsLength);
+        uint256 winnerIndex = (_randomWords[0] % length);
 
         address winner = participants[winnerIndex];
 
@@ -172,7 +164,7 @@ contract LuckyDraw is ERC721, ERC721Holder, VRFConsumerBaseV2, Ownable {
         // Cancel the subscription and send the remaining LINK to a wallet address.
         COORDINATOR.cancelSubscription(
             tokenIdToSubscriptionId[tokenId],
-            _msgSender()
+            msg.sender
         );
 
         // Clear data
