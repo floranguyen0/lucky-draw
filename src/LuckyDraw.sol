@@ -10,9 +10,9 @@ import "@openzeppelin/contracts/utils/Counters.sol";
 
 contract LuckyDraw is ERC721, ERC721Holder, VRFConsumerBaseV2, Ownable {
     uint256 private _tokenIdCounter;
-    uint32 private constant CALLBACK_GAS_LIMIT = 100000;
-    uint8 private constant REQUEST_CONFIRMATIONS = 3;
-    uint8 private constant NUM_WORDS = 1;
+    uint32 private constant _CALLBACK_GAS_LIMIT = 100000;
+    uint8 private constant _REQUEST_CONFIRMATIONS = 3;
+    uint8 private constant _NUM_WORDS = 1;
 
     VRFCoordinatorV2Interface public immutable COORDINATOR;
     bytes32 public immutable KEY_HASH;
@@ -40,13 +40,13 @@ contract LuckyDraw is ERC721, ERC721Holder, VRFConsumerBaseV2, Ownable {
         _;
     }
 
-    mapping(uint256 => bool) public isLuckDrawActive;
-    mapping(uint256 => uint64) public tokenIdToSubscriptionId;
-    mapping(uint256 => address[]) public tokenIdToParticipants;
-    mapping(uint256 => uint256) public requestedIdToTokenId;
-    mapping(uint256 => address) public tokenIdToWinner;
-
-    // mapping(uint256 => uint256) public tokenId
+    mapping(uint256 tokenId => bool isActive) public isLuckDrawActive;
+    mapping(uint256 tokenId => uint64 subscriptionId)
+        public tokenIdToSubscriptionId;
+    mapping(uint256 tokenId => address[] participants)
+        public tokenIdToParticipants;
+    mapping(uint256 requestedId => uint256 tokenId) public requestedIdToTokenId;
+    mapping(uint256 tokenId => address winner) public tokenIdToWinner;
 
     constructor(
         address vrfCoordinatorAddress,
@@ -136,9 +136,9 @@ contract LuckyDraw is ERC721, ERC721Holder, VRFConsumerBaseV2, Ownable {
         uint256 requestId = COORDINATOR.requestRandomWords(
             KEY_HASH,
             tokenIdToSubscriptionId[tokenId],
-            REQUEST_CONFIRMATIONS,
-            CALLBACK_GAS_LIMIT,
-            NUM_WORDS
+            _REQUEST_CONFIRMATIONS,
+            _CALLBACK_GAS_LIMIT,
+            _NUM_WORDS
         );
 
         requestedIdToTokenId[requestId] = tokenId;
